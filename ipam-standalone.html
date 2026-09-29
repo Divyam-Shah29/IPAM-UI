@@ -19060,7 +19060,7 @@ function formDefaults(kind) {
     sshKey: '', passphrase: '', cliOptions: true,
     configTransferProtocol: '', enableCommand: '', enableUsername: '', enablePassword: '',
     enablePasswordPromptPattern: '', enablePrompt: '', configModeCommand: '', configPassword: '', vrfName: '',
-    snmpVersion: '', community: '', writeCommunity: '',
+    snmpVersion: '', community: '', writeCommunity: '', bearerToken: '',
     securityUserName: '', securityLevel: '', authProtocol: '', authPassword: '', privacyProtocol: '', privatePassword: '' };
   if (kind === 'dns') return { name: '', description: '', ip: '', port: 53, timeout: 0 };
   if (kind === 'dhcp') return { name: '', description: '', ip: '', port: 67, timeout: 0, serverType: '', credential: '' };
@@ -19212,8 +19212,8 @@ function formBody() {
   }
 
   if (fm.kind === 'credential') {
-    const pwd = (id, label, required) => field(label,
-      `<obs-input id="${id}" type="password" block prefix-icon="undo" suffix-icon="eye" value="${esc(d[({ fPassword: 'password', fCommunity: 'community', fWriteCommunity: 'writeCommunity', fEnablePassword: 'enablePassword', fAuthPassword: 'authPassword', fPrivatePassword: 'privatePassword' })[id]])}"></obs-input>`,
+    const pwd = (id, label, required, placeholder) => field(label,
+      `<obs-input id="${id}" type="password" block prefix-icon="undo" suffix-icon="eye" ${placeholder ? `placeholder="${esc(placeholder)}"` : ''} value="${esc(d[({ fPassword: 'password', fCommunity: 'community', fWriteCommunity: 'writeCommunity', fEnablePassword: 'enablePassword', fAuthPassword: 'authPassword', fPrivatePassword: 'privatePassword', fBearerToken: 'bearerToken' })[id]])}"></obs-input>`,
       null, required);
     let extra = '';
     if (d.protocol === 'Powershell') {
@@ -19224,8 +19224,10 @@ function formBody() {
       extra = `
         ${field('Authentication Type', `<obs-select id="fAuthType" block searchable="true" options='${j(['Basic', 'NTLM', 'Digest', 'API Key', 'Bearer Token', 'OAuth 2.0', 'Client Certificate Authentication'].map(v => opt(v)))}' value="${esc(d.authType)}"></obs-select>`, null, true)}
         <div></div>
-        ${field('User Name', `<obs-input id="fUsername" block value="${esc(d.username)}"></obs-input>`, null, true)}
-        ${pwd('fPassword', 'Password', true)}`;
+        ${d.authType === 'Bearer Token'
+          ? pwd('fBearerToken', 'Bearer Token', true, 'Enter your Bearer Token')
+          : `${field('User Name', `<obs-input id="fUsername" block value="${esc(d.username)}"></obs-input>`, null, true)}
+        ${pwd('fPassword', 'Password', true)}`}`;
     } else if (d.protocol === 'SSH') {
       extra = `
         ${field('User Name', `<obs-input id="fUsername" block value="${esc(d.username)}"></obs-input>`, null, true)}
@@ -19394,7 +19396,7 @@ function bindFormBody() {
    ['#fEnablePasswordPromptPattern', 'enablePasswordPromptPattern'], ['#fEnablePrompt', 'enablePrompt'],
    ['#fConfigModeCommand', 'configModeCommand'], ['#fConfigPassword', 'configPassword'], ['#fVrfName', 'vrfName'],
    ['#fCommunity', 'community'], ['#fWriteCommunity', 'writeCommunity'], ['#fSecurityUserName', 'securityUserName'],
-   ['#fAuthPassword', 'authPassword'], ['#fPrivatePassword', 'privatePassword'],
+   ['#fAuthPassword', 'authPassword'], ['#fPrivatePassword', 'privatePassword'], ['#fBearerToken', 'bearerToken'],
    ['#fDescription', 'description'], ['#fPort', 'port'], ['#fTimeout', 'timeout'],
    ['#fPattern', 'pattern'], ['#fTemplate', 'template'],
    ['#fDomain', 'domain'], ['#fDc', 'dc'], ['#fOui', 'oui'], ['#fVendorName', 'vendor']]
@@ -19402,11 +19404,12 @@ function bindFormBody() {
   /* selects that change only their own value */
   [['#fSite', 'site'], ['#fSnmp', 'snmp'], ['#fProfile', 'profile'], ['#fSchedule', 'schedule'],
    ['#fTransport', 'transport'], ['#fSubnet', 'subnet'], ['#fLease', 'lease'], ['#fScope', 'scope'],
-   ['#fAuthType', 'authType'], ['#fConfigTransferProtocol', 'configTransferProtocol'],
+   ['#fConfigTransferProtocol', 'configTransferProtocol'],
    ['#fSnmpVersion', 'snmpVersion'], ['#fAuthProtocol', 'authProtocol'], ['#fPrivacyProtocol', 'privacyProtocol'],
    ['#fCaseTransform', 'caseTransform'], ['#fDhcpServerType', 'serverType']]
     .forEach(([sel, key]) => on(sel, 'change', e => { fm.data[key] = fmVal(e); }));
   on('#fMatchField', 'change', e => { fm.data.matchField = fmVal(e); repaintFormBody(); });
+  on('#fAuthType', 'change', e => { fm.data.authType = fmVal(e); repaintFormBody(); });
   /* selects that change what the REST of the form says */
   on('#fType', 'change', e => {
     fm.data.type = fmVal(e);
@@ -19422,7 +19425,11 @@ function bindFormBody() {
   on('#fIpCredProfile', 'change', e => { fm.data.profile = fmVal(e); });
   on('#fIpCredCreate', 'click', () => openForm('credential'));
   on('#fDhcpCredential', 'change', e => { fm.data.credential = fmVal(e); });
-  on('#fDhcpCredCreate', 'click', () => openForm('credential'));
+  on('#fDhcpCredCreate', 'click', () => {
+    const isFortinet = fm.data.serverType === 'Fortinet Firewall';
+    openForm('credential');
+    if (isFortinet) { fm.data.protocol = 'HTTP/HTTPS'; paintForm(); }
+  });
   on('#fProtocol', 'change', e => { fm.data.protocol = fmVal(e); fm.ran = false; paintForm(); });
   on('#fCliOptions', 'change', e => { fm.data.cliOptions = detailOf(e) !== false; paintForm(); });
   on('#fSecurityLevel', 'change', e => { fm.data.securityLevel = fmVal(e); paintForm(); });
