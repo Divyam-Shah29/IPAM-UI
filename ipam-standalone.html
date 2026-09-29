@@ -17084,24 +17084,20 @@ PAGERS.tblSubnetApproval = cmd => {
 function pendingSubnetDecide(id, decision) {
   const r = PENDING_SUBNETS.find(x => x.id === id);
   if (!r) return;
-  const titleWord = decision === 'approve' ? 'Approve' : decision === 'guest' ? 'Approve (as Guest)' : 'Reject';
-  askConfirm({
-    title: titleWord + ' ' + r.cidr + '?',
-    icon: decision === 'reject' ? 'timesCircle' : 'checkCircle', variant: decision === 'reject' ? 'error' : 'primary',
-    confirmText: decision === 'reject' ? 'Reject' : 'Approve',
-    body: decision === 'approve'
-      ? `${r.cidr} will join the known-subnets list under ${esc(r.suggestedSite)}. Every pending record already collected for it is unblocked immediately.`
-      : decision === 'guest'
-      ? `${r.cidr} will join the known-subnets list under ${esc(r.suggestedSite)}, classified as a Guest network. Devices found in it start as Guest rather than going through the full rogue/trust cascade.`
-      : `${r.cidr} stays off the known-subnets list. It is not blacklisted — it re-enters this queue the next time any source reports it.`,
-    onOk: () => {
-      PENDING_SUBNETS = PENDING_SUBNETS.filter(x => x.id !== id);
-      flash = decision === 'approve' ? { title: 'Subnet approved', body: `${r.cidr} has been added under ${r.suggestedSite}.` }
-        : decision === 'guest' ? { title: 'Subnet approved as Guest', body: `${r.cidr} has been added under ${r.suggestedSite} as a Guest network.` }
-        : { title: 'Subnet rejected', body: `${r.cidr} has been rejected.` };
-      renderContent();
-    }
-  });
+  if (decision === 'reject') {
+    askConfirm({
+      title: 'Reject ' + r.cidr + '?', icon: 'timesCircle', variant: 'error', confirmText: 'Reject',
+      body: `${r.cidr} stays off the known-subnets list. It is not blacklisted — it re-enters this queue the next time any source reports it.`,
+      onOk: () => {
+        PENDING_SUBNETS = PENDING_SUBNETS.filter(x => x.id !== id);
+        flash = { title: 'Subnet rejected', body: `${r.cidr} has been rejected.` };
+        renderContent();
+      }
+    });
+    return;
+  }
+  pendingApprovalContext = { pendingId: id, decision };
+  openAddRouterPage({ targetValue: r.cidr });
 }
 function bindSubnetApprovalRows(scope) {
   scope.querySelectorAll('obs-menu[data-rowmenu]').forEach(m => m.addEventListener('select', e => {
@@ -18537,18 +18533,20 @@ function bindRouterRows(scope) {
 
 const AR_TARGET_TABS = [{ key: 'cidr', label: 'IP/CIDR' }, { key: 'csv', label: 'CSV' }];
 const AR_EXCLUDE_TABS = [{ key: 'ip', label: 'IP' }, { key: 'iprange', label: 'IP Range' }];
-function addRouterDefaults() {
-  return { target: 'cidr', targetValue: '', manualIps: '', excludeMode: 'ip',
-           collectorType: 'Collector', collector: '', site: '', profile: [],
+function addRouterDefaults(prefill) {
+  return { target: 'cidr', targetValue: (prefill && prefill.targetValue) || '', manualIps: '', excludeMode: 'ip',
+           collectorType: 'Collector', collector: '', profile: [],
            retryCount: '2', pingCheck: true, notify: '' };
 }
-function openAddRouterPage() {
-  addRouter = addRouterDefaults();
+let pendingApprovalContext = null; /* { pendingId, decision } — set when Add IP Address Discovery was opened from Subnet Approval */
+function openAddRouterPage(prefill) {
+  addRouter = addRouterDefaults(prefill);
   renderContent();
   syncHash();
 }
 function closeAddRouterPage() {
   addRouter = null;
+  pendingApprovalContext = null;
   renderContent();
   syncHash();
 }
@@ -18579,8 +18577,6 @@ function addRouterPageHtml() {
     <div class="ip-grid cols-3">
       ${field('Credential Profiles', `<obs-select id="arProfile" block multiple allow-clear placeholder="Select" options='${j(routerProfiles())}' value="${esc(d.profile.join(','))}"></obs-select>`, null, true)}
       <div class="ip-field"><span class="ip-field-label">&nbsp;</span><obs-button variant="default" id="arCreateProfile">Create Credential Profile</obs-button></div>
-      ${field('Site', `<obs-input id="arSite" block placeholder="Write site name" value="${esc(d.site)}"></obs-input>`,
-        'Optional — leave blank to let the Site Separation precedence chain decide.')}
     </div>
     ${group('Discovery Parameters', `
       <div class="ip-grid cols-3">
@@ -18621,14 +18617,23 @@ function bindAddRouterPage() {
     .forEach(([sel, key]) => on(sel, 'input', e => { addRouter[key] = fmVal(e); }));
   [['#arCollectorType', 'collectorType'], ['#arCollector', 'collector']]
     .forEach(([sel, key]) => on(sel, 'change', e => { addRouter[key] = fmVal(e); }));
-  on('#arSite', 'input', e => { addRouter.site = fmVal(e); });
   on('#arProfile', 'change', e => { addRouter.profile = arrOf(detailOf(e)); });
   on('#arPingCheck', 'change', e => { addRouter.pingCheck = detailOf(e) !== false; });
   on('#arSave', 'click', () => {
     const name = addRouter.targetValue || addRouter.manualIps || 'The seed router';
     addRouter = null;
-    flash = { title: 'Router queued for discovery',
-      body: name + ' has been added. The first ARP read starts now; its subnets appear on Subnet Details as soon as it answers.' };
+    if (pendingApprovalContext) {
+      const { pendingId, decision } = pendingApprovalContext;
+      const r = PENDING_SUBNETS.find(x => x.id === pendingId);
+      PENDING_SUBNETS = PENDING_SUBNETS.filter(x => x.id !== pendingId);
+      pendingApprovalContext = null;
+      flash = decision === 'guest'
+        ? { title: 'Subnet approved as Guest', body: (r ? r.cidr : name) + ' has been added as a Guest network, with its credential profile bound for discovery.' }
+        : { title: 'Subnet approved', body: (r ? r.cidr : name) + ' has been added. The first ARP read starts now; its subnets appear on Subnet Details as soon as it answers.' };
+    } else {
+      flash = { title: 'Router queued for discovery',
+        body: name + ' has been added. The first ARP read starts now; its subnets appear on Subnet Details as soon as it answers.' };
+    }
     renderContent();
     syncHash();
   });
