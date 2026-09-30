@@ -18467,9 +18467,9 @@ function screenSettings(area) {
     <div class="ip-sp-body">${schedulerPanelHtml()}</div>
   </aside>` : ''}
   ${editScheduler ? `<div class="ip-sp-scrim"></div>
-  <aside class="ip-stackpanel" role="dialog" aria-label="Edit Scheduler" aria-modal="false">
+  <aside class="ip-stackpanel" role="dialog" aria-label="${esc(editScheduler.panelTitle)}" aria-modal="false">
     <div class="ip-sp-head">
-      <span class="ip-sp-title">Edit Scheduler</span>
+      <span class="ip-sp-title">${esc(editScheduler.panelTitle)}</span>
       <obs-button variant="transparent" square id="esPanelClose" aria-label="Close"><obs-icon name="times" size="16"></obs-icon></obs-button>
     </div>
     <div class="ip-sp-body">${editSchedulerPageHtml()}</div>
@@ -18478,9 +18478,9 @@ function screenSettings(area) {
 
 /* -------------------------------------------------------- 1. IP Address Discovery */
 const ROUTER_ROW_MENU = [
-  { key: 'test', label: 'Test credential', icon: 'testCredentials' },
   { key: 'edit', label: 'Edit', icon: 'pencil' },
-  { key: 'delete', label: 'Remove seed router', icon: 'trash', danger: true }
+  { key: 'schedule', label: 'Schedule', icon: 'schedule' },
+  { key: 'delete', label: 'Delete Discovery Profile', icon: 'trash', danger: true }
 ];
 
 /* -------------------------------------------------------- Maintenance Scheduler */
@@ -18575,10 +18575,11 @@ function editSchedulerDefaults(row) {
            type: row.type, days: (row.days || []).slice(), months: (row.months || []).slice(), dates: (row.dates || []).slice(),
            remark: row.remark || '' };
 }
-function openEditSchedulerPage(id) {
+function openEditSchedulerPage(id, title) {
   const row = SCHEDULER_ROWS.find(x => x.id === id);
   if (!row) return;
   editScheduler = editSchedulerDefaults(row);
+  editScheduler.panelTitle = title || 'Edit Scheduler';
   renderContent();
 }
 function closeEditSchedulerPage() {
@@ -18623,7 +18624,7 @@ function bindEditSchedulerPage() {
   on('#esRemark', 'input', e => { editScheduler.remark = fmVal(e); });
   on('#esReset', 'click', () => {
     const row = SCHEDULER_ROWS.find(x => x.id === editScheduler.id);
-    if (row) { editScheduler = editSchedulerDefaults(row); renderContent(); }
+    if (row) { const title = editScheduler.panelTitle; editScheduler = editSchedulerDefaults(row); editScheduler.panelTitle = title; renderContent(); }
   });
   on('#esSave', 'click', () => {
     const row = SCHEDULER_ROWS.find(x => x.id === editScheduler.id);
@@ -20208,11 +20209,10 @@ function settingsRowAction(table, key, id) {
     });
     return;
   }
-  if (key === 'test') {
-    askConfirm({ title: 'Test the credential on ' + nameOf() + '?', icon: 'testCredentials',
-      variant: 'primary', confirmText: 'Test',
-      body: 'A single read is attempted with the profile assigned to this device. Nothing else is collected.',
-      onOk: () => {} });
+  if (key === 'schedule') {
+    const row = SCHEDULER_ROWS[0];
+    const r = P.routers.find(x => x.id === id);
+    if (row) openEditSchedulerPage(row.id, r ? `${r.ip} Scheduler` : 'Edit Scheduler');
     return;
   }
   if (key === 'toggle') {
