@@ -17013,8 +17013,6 @@ function screenRogue() {
           placeholder="Search MAC, IP, vendor…"></obs-input>
         <span class="ip-spacer"></span>
         <obs-tooltip placement="bottom"><obs-button slot="trigger" variant="transparent" square
-            id="rogueRunbook" aria-label="Execute runbook"><obs-icon name="runbook" size="14"></obs-icon></obs-button>Execute runbook</obs-tooltip>
-        <obs-tooltip placement="bottom"><obs-button slot="trigger" variant="transparent" square
             id="rogueColumns" aria-label="Columns"><obs-icon name="eye" size="14"></obs-icon></obs-button>Columns</obs-tooltip>
         <obs-tooltip placement="bottom"><obs-button slot="trigger" variant="transparent" square
             id="rogueExportPdf" aria-label="Export as PDF"><obs-icon name="export-pdf" size="14"></obs-icon></obs-button>Export as PDF</obs-tooltip>
@@ -17680,11 +17678,9 @@ const POLICY_FORECAST_RANGE_OPTIONS = ['1 Day', '3 Days', '7 Days', '14 Days', '
 const POLICY_FORM_SECTIONS = [
   { key: 'message', label: 'Set Alert Message' },
   { key: 'notify', label: 'Notification' },
-  { key: 'action', label: 'Take Action' },
   { key: 'incident', label: 'Declare Incident' }
 ];
 const POLICY_MAX_ROWS = 3;
-const POLICY_ACTION_OPTIONS = ['Restart Service', 'Run Script', 'Send SNMP Reset'];
 let POLICY_INTEGRATION_OPTIONS = ['ServiceNow', 'Jira', 'PagerDuty'];
 const INTEGRATION_TYPE_OPTIONS = ['Microsoft Teams', 'ServiceOps', 'Syslog Forwarder', 'SNMP Trap Forwarder', 'Slack'];
 let integrationProfileForm = null; /* the Create Integration Profile side panel state, or null when closed */
@@ -17752,7 +17748,7 @@ function policyFormDefaults(typeKey) {
     forecastCondition: '', forecastValue: '0', forecastRange: '', forecastSeverity: 'Critical', eventSeverity: 'Critical',
     subject: POLICY_DEFAULT_SUBJECT, message: POLICY_DEFAULT_MESSAGE,
     notifyRows: [{ notify: '', severity: '' }], playSound: false, renotification: false,
-    actionSelect: '', incidentRows: [{ profile: '', severity: '' }], open: {} };
+    incidentRows: [{ profile: '', severity: '' }], open: {} };
 }
 function policyFormFromRecord(typeKey, rec) {
   const d = policyFormDefaults(typeKey);
@@ -17880,12 +17876,6 @@ function policyAccBodyHtml(key, d) {
       <span class="ip-field-label">Renotification&nbsp;<obs-icon name="infoCircle" size="12"></obs-icon></span>
       <obs-switch id="polRenotify" ${d.renotification ? 'checked' : ''} checked-text="ON" unchecked-text="OFF"></obs-switch>
     </div>`;
-  if (key === 'action') return `
-    <div class="ip-row" style="align-items:flex-end">
-      <div style="flex:1 1 auto">${field('Select Actions to Trigger', `<obs-select id="polAction" block placeholder="Select"
-        options='${j(POLICY_ACTION_OPTIONS.map(v => opt(v)))}' value="${esc(d.actionSelect)}"></obs-select>`)}</div>
-      <obs-button variant="default" id="polCreateRunbook">Create New Runbook</obs-button>
-    </div>`;
   if (key === 'incident') return `
     ${d.incidentRows.map((row, i) => `<div class="ip-row" style="align-items:flex-end;${i ? 'margin-top:var(--ip-padding-md)' : ''}" data-incident-row="${i}">
       <div style="flex:1 1 auto">${field('Select Integration profile to Trigger', `<obs-select class="polIncidentProfile" data-row="${i}" block placeholder="Select"
@@ -17989,7 +17979,6 @@ function bindPolicyFormPage() {
   }));
   on('#polPlaySound', 'change', e => { d.playSound = detailOf(e) !== false; });
   on('#polRenotify', 'change', e => { d.renotification = detailOf(e) !== false; });
-  on('#polAction', 'change', e => { d.actionSelect = fmVal(e); });
   host.querySelectorAll('.polIncidentProfile').forEach(el => el.addEventListener('change', e => {
     d.incidentRows[Number(el.getAttribute('data-row'))].profile = fmVal(e);
   }));
@@ -19738,14 +19727,6 @@ function pollSubnet(s) {
     onOk: () => {}
   });
 }
-function executeRunbookForRogue() {
-  const n = ROGUE_DEVICES.filter(r => r.status === 'Rogue').length;
-  askConfirm({
-    title: 'Execute runbook on rogue devices?', icon: 'runbook', variant: 'primary', confirmText: 'Run',
-    body: `Runs a configured automation runbook (e.g. network-wide MAC block) against ${num(n)} currently flagged rogue device${n === 1 ? '' : 's'} — not available in this prototype yet.`,
-    onOk: () => {}
-  });
-}
 function toggleSubnetFullscreen() {
   if (document.fullscreenElement) document.exitFullscreen();
   else document.documentElement.requestFullscreen().catch(() => {});
@@ -20092,7 +20073,6 @@ function bindContent() {
   on('#snColumns', 'click', e => openColMenu('subnets', SUBNET_COLS, e.currentTarget, repaintSubnetsTable));
   on('#ipColumns', 'click', e => openColMenu('ips', IP_COLS, e.currentTarget, repaintIpsTable));
   on('#rogueColumns', 'click', e => openColMenu('rogue', ROGUE_COLS, e.currentTarget, repaintRogueTable));
-  on('#rogueRunbook', 'click', executeRunbookForRogue);
   on('#snSearch', 'input', e => {
     const d = detailOf(e);
     F.q = typeof d === 'string' ? d : (d && d.value) || '';
