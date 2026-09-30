@@ -16723,7 +16723,7 @@ function grid(id, cols, rows, opts = {}) {
    from the eye menu. */
 const COL_HIDDEN = { subnets: new Set(),
   ips: new Set(['Connected switch', 'Connected port']), rogue: new Set(),
-  sdIps: new Set(), sdHist: new Set() };
+  sdIps: new Set(), sdHist: new Set(), discoveryProfile: new Set(), routers: new Set() };
 const visibleCols = (cols, key) => cols.filter(c => !c.title || !COL_HIDDEN[key].has(c.title));
 
 let colMenuPortal = null; /* { el, key, btn } while a checklist is open */
@@ -18468,6 +18468,22 @@ function screenSettings(area) {
       <obs-button variant="transparent" square id="arPanelClose" aria-label="Close"><obs-icon name="times" size="16"></obs-icon></obs-button>
     </div>
     <div class="ip-sp-body">${addRouterPageHtml()}</div>
+  </aside>` : ''}
+  ${schedulerPanel ? `<div class="ip-sp-scrim"></div>
+  <aside class="ip-stackpanel" role="dialog" aria-label="Maintenance Scheduler Details" aria-modal="false">
+    <div class="ip-sp-head">
+      <span class="ip-sp-title">${esc(schedulerRouterName())} - Maintenance Scheduler Details</span>
+      <obs-button variant="transparent" square id="schedulerPanelClose" aria-label="Close"><obs-icon name="times" size="16"></obs-icon></obs-button>
+    </div>
+    <div class="ip-sp-body">${schedulerPanelHtml()}</div>
+  </aside>` : ''}
+  ${editScheduler ? `<div class="ip-sp-scrim"></div>
+  <aside class="ip-stackpanel" role="dialog" aria-label="Edit Scheduler" aria-modal="false">
+    <div class="ip-sp-head">
+      <span class="ip-sp-title">Edit Scheduler</span>
+      <obs-button variant="transparent" square id="esPanelClose" aria-label="Close"><obs-icon name="times" size="16"></obs-icon></obs-button>
+    </div>
+    <div class="ip-sp-body">${editSchedulerPageHtml()}</div>
   </aside>` : ''}`;
 }
 
@@ -18477,6 +18493,167 @@ const ROUTER_ROW_MENU = [
   { key: 'edit', label: 'Edit', icon: 'pencil' },
   { key: 'delete', label: 'Remove seed router', icon: 'trash', danger: true }
 ];
+
+/* -------------------------------------------------------- Maintenance Scheduler */
+let schedulerPanel = null; /* { routerId } while the half-page panel is open */
+let setSchedulerPage = 1;
+let SCHEDULER_PAGE = 50;
+let SCHEDULER_ROWS = [
+  { id: 'sch-1', type: 'Once', startDate: '30-06-2026', startAt: '30-06-2026 00:10', endDate: '30-06-2026', endAt: '30-06-2026 00:15', enabled: true }
+];
+const SCHEDULER_ROW_MENU = [
+  { key: 'edit', label: 'Edit Scheduler', icon: 'pencil' },
+  { key: 'delete', label: 'Delete Scheduler', icon: 'trash', danger: true }
+];
+const SCHEDULER_COLS = [
+  { title: 'Scheduler Type', width: 14, cell: r => esc(r.type) },
+  { title: 'On Maintenance Start Date', width: 17, cell: r => esc(r.startDate) },
+  { title: 'On Maintenance Start Time', width: 17, cell: r => `<span class="ip-pill">${esc(r.startAt)}</span>` },
+  { title: 'Off Maintenance End Date', width: 17, cell: r => esc(r.endDate) },
+  { title: 'Off Maintenance End Time', width: 17, cell: r => `<span class="ip-pill">${esc(r.endAt)}</span>` },
+  { title: 'Actions', width: 18, cls: 'ip-row-actions', cell: r => `
+      <obs-switch data-schedtoggle="${esc(r.id)}" ${r.enabled ? 'checked' : ''} checked-text="ON" unchecked-text="OFF"></obs-switch>
+      <obs-menu items='${j(SCHEDULER_ROW_MENU)}' data-rowmenu="${esc(r.id)}"></obs-menu>` }
+];
+function schedulerRouterName() {
+  const r = schedulerPanel && P.routers.find(x => x.id === schedulerPanel.routerId);
+  return r ? r.name : '';
+}
+function openSchedulerPanel(routerId) {
+  schedulerPanel = { routerId };
+  setSchedulerPage = 1;
+  renderContent();
+}
+function closeSchedulerPanel() {
+  schedulerPanel = null;
+  renderContent();
+}
+function schedulerPanelHtml() {
+  const all = SCHEDULER_ROWS;
+  const pages = Math.max(1, Math.ceil(all.length / SCHEDULER_PAGE));
+  setSchedulerPage = Math.min(setSchedulerPage, pages);
+  const rows = all.slice((setSchedulerPage - 1) * SCHEDULER_PAGE, setSchedulerPage * SCHEDULER_PAGE);
+  const p = { page: setSchedulerPage, pages, total: all.length, size: SCHEDULER_PAGE };
+  return `${grid('tblScheduler', SCHEDULER_COLS, rows, { empty: 'No maintenance schedule for this profile', fixed: true })}
+    ${pager('tblScheduler', p, 'items', { full: true })}`;
+}
+PAGERS.tblScheduler = cmd => {
+  if (cmd === 'first') setSchedulerPage = 1;
+  else if (cmd === 'last') setSchedulerPage = Infinity;
+  else if (typeof cmd === 'string' && cmd.indexOf('size:') === 0) { SCHEDULER_PAGE = Number(cmd.slice(5)) || SCHEDULER_PAGE; setSchedulerPage = 1; }
+  else setSchedulerPage += cmd;
+  const host = view.querySelector('.ip-sp-body');
+  if (host) { host.innerHTML = schedulerPanelHtml(); bindSchedulerPanel(); }
+};
+function bindSchedulerPanel() {
+  const on = (sel, ev, fn) => { const el = view.querySelector(sel); if (el) el.addEventListener(ev, fn); };
+  on('#schedulerPanelClose', 'click', closeSchedulerPanel);
+  view.querySelectorAll('[data-schedtoggle]').forEach(sw => sw.addEventListener('change', e => {
+    const row = SCHEDULER_ROWS.find(x => x.id === sw.getAttribute('data-schedtoggle'));
+    if (row) row.enabled = detailOf(e) !== false;
+  }));
+  view.querySelectorAll('obs-menu[data-rowmenu]').forEach(m => m.addEventListener('select', e => {
+    const key = detailOf(e) && (detailOf(e).key || detailOf(e));
+    const id = m.getAttribute('data-rowmenu');
+    if (key === 'edit') {
+      openEditSchedulerPage(id);
+    } else if (key === 'delete') {
+      askConfirm({ title: 'Delete this maintenance schedule?', icon: 'trash', variant: 'error', confirmText: 'Delete',
+        body: 'The device follows its normal polling schedule again once this maintenance window is removed.',
+        onOk: () => {
+          SCHEDULER_ROWS = SCHEDULER_ROWS.filter(x => x.id !== id);
+          flash = { title: 'Scheduler deleted', body: 'The maintenance schedule has been removed.' };
+          renderContent();
+        } });
+    }
+  }));
+}
+
+/* -------------------------------------------------------- Edit Scheduler */
+let editScheduler = null; /* { id, onDate, onHours, offDate, offHours, type, remark } while its half-page panel is open */
+const SCHEDULER_TYPE_TABS = [{ key: 'Once', label: 'Once' }, { key: 'Daily', label: 'Daily' }, { key: 'Weekly', label: 'Weekly' }, { key: 'Monthly', label: 'Monthly' }];
+const HOUR_OPTIONS = (() => {
+  const out = [];
+  for (let h = 0; h < 24; h++) for (let m = 0; m < 60; m += 5) out.push(String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0'));
+  return out;
+})();
+const WEEKDAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+const MONTH_DATE_NUMBERS = Array.from({ length: 31 }, (_, i) => String(i + 1));
+function editSchedulerDefaults(row) {
+  return { id: row.id, onDate: row.startDate.replace(/-/g, '/'), onHours: (row.startAt.split(' ')[1] || row.startAt),
+           offDate: row.endDate.replace(/-/g, '/'), offHours: (row.endAt.split(' ')[1] || row.endAt),
+           type: row.type, days: (row.days || []).slice(), months: (row.months || []).slice(), dates: (row.dates || []).slice(),
+           remark: row.remark || '' };
+}
+function openEditSchedulerPage(id) {
+  const row = SCHEDULER_ROWS.find(x => x.id === id);
+  if (!row) return;
+  editScheduler = editSchedulerDefaults(row);
+  renderContent();
+}
+function closeEditSchedulerPage() {
+  editScheduler = null;
+  renderContent();
+}
+function editSchedulerPageHtml() {
+  const d = editScheduler;
+  return `<div class="ip-form">
+    <div class="span-2 ip-group-h">On Maintenance</div>
+    ${field('Start Date', `<obs-input id="esOnDate" block suffix-icon="calendar" value="${esc(d.onDate)}"></obs-input>`, null, true)}
+    ${field('Hours', `<obs-select id="esOnHours" block options='${j(HOUR_OPTIONS.map(v => opt(v)))}' value="${esc(d.onHours)}"></obs-select>`, null, true)}
+    <div class="span-2 ip-group-h">Off Maintenance</div>
+    ${field('Start Date', `<obs-input id="esOffDate" block suffix-icon="calendar" value="${esc(d.offDate)}"></obs-input>`, null, true)}
+    ${field('Hours', `<obs-select id="esOffHours" block options='${j(HOUR_OPTIONS.map(v => opt(v)))}' value="${esc(d.offHours)}"></obs-select>`, null, true)}
+    <div class="span-2">${field('Scheduler Type', `<obs-radio id="esType" as-button options='${j(SCHEDULER_TYPE_TABS)}' value="${esc(d.type)}"></obs-radio>`)}</div>
+    ${d.type === 'Weekly' ? `<div class="span-2">${field('Days', `<obs-select id="esDays" block multiple allow-select-all placeholder="Select"
+        options='${j(WEEKDAY_NAMES.map(v => opt(v)))}' value="${esc(d.days.join(','))}"></obs-select>`, null, true)}</div>` : ''}
+    ${d.type === 'Monthly' ? `
+    <div class="span-2">${field('Months', `<obs-select id="esMonths" block multiple allow-select-all placeholder="Select"
+        options='${j(MONTH_NAMES.map(v => opt(v)))}' value="${esc(d.months.join(','))}"></obs-select>`, null, true)}</div>
+    <div class="span-2">${field('Dates', `<obs-select id="esDates" block multiple allow-select-all placeholder="Select"
+        options='${j(MONTH_DATE_NUMBERS.map(v => opt(v)))}' value="${esc(d.dates.join(','))}"></obs-select>`, null, true)}</div>` : ''}
+    <div class="span-2">${field('Remark', `<obs-input id="esRemark" block value="${esc(d.remark)}"></obs-input>`, null, true)}</div>
+    <div class="span-2 ip-row" style="justify-content:flex-end">
+      <obs-button variant="default" id="esReset">Reset</obs-button>
+      <obs-button variant="primary" id="esSave">Update Scheduler</obs-button>
+    </div>
+  </div>`;
+}
+function bindEditSchedulerPage() {
+  const on = (sel, ev, fn) => { const el = view.querySelector(sel); if (el) el.addEventListener(ev, fn); };
+  on('#esPanelClose', 'click', closeEditSchedulerPage);
+  on('#esOnDate', 'input', e => { editScheduler.onDate = fmVal(e); });
+  on('#esOnHours', 'change', e => { editScheduler.onHours = fmVal(e); });
+  on('#esOffDate', 'input', e => { editScheduler.offDate = fmVal(e); });
+  on('#esOffHours', 'change', e => { editScheduler.offHours = fmVal(e); });
+  on('#esType', 'change', e => { editScheduler.type = keyOf(detailOf(e)) || 'Once'; renderContent(); });
+  on('#esDays', 'change', e => { editScheduler.days = arrOf(detailOf(e)); });
+  on('#esMonths', 'change', e => { editScheduler.months = arrOf(detailOf(e)); });
+  on('#esDates', 'change', e => { editScheduler.dates = arrOf(detailOf(e)); });
+  on('#esRemark', 'input', e => { editScheduler.remark = fmVal(e); });
+  on('#esReset', 'click', () => {
+    const row = SCHEDULER_ROWS.find(x => x.id === editScheduler.id);
+    if (row) { editScheduler = editSchedulerDefaults(row); renderContent(); }
+  });
+  on('#esSave', 'click', () => {
+    const row = SCHEDULER_ROWS.find(x => x.id === editScheduler.id);
+    if (row) {
+      row.startDate = editScheduler.onDate.replace(/\//g, '-');
+      row.startAt = row.startDate + ' ' + editScheduler.onHours;
+      row.endDate = editScheduler.offDate.replace(/\//g, '-');
+      row.endAt = row.endDate + ' ' + editScheduler.offHours;
+      row.type = editScheduler.type;
+      row.days = editScheduler.days;
+      row.months = editScheduler.months;
+      row.dates = editScheduler.dates;
+      row.remark = editScheduler.remark;
+    }
+    editScheduler = null;
+    flash = { title: 'Scheduler updated', body: 'The maintenance schedule has been updated.' };
+    renderContent();
+  });
+}
 const ROUTER_COLS = [
   { title: 'Discovery Profile Name', width: 16, cell: r => `<b class="ip-strong">${esc(r.name)}</b>` },
   { title: 'IP/CIDR/CSV', width: 14, cls: 'mono', cell: r => esc(r.ip) },
@@ -18484,6 +18661,8 @@ const ROUTER_COLS = [
   { title: 'Vendor / model', width: 20, cell: r => esc(r.vendor) },
   { title: 'State', width: 12, cell: r => `<obs-tag variant="${ROUTER_TAG[r.status][1]}">${esc(ROUTER_TAG[r.status][0])}</obs-tag>` },
   { title: 'Last run', width: 15, cell: r => esc(r.lastRun) },
+  { title: 'Scheduler', width: 9, cell: r => `<obs-tooltip placement="bottom"><obs-button slot="trigger" variant="transparent" square class="cell-ic-btn"
+      data-schedule="${esc(r.id)}" aria-label="Schedule"><obs-icon name="schedule" size="14"></obs-icon></obs-button>Schedule</obs-tooltip>` },
   { title: '', width: 9, cls: 'ip-row-actions', cell: r => `
       <obs-tooltip placement="bottom"><obs-button slot="trigger" variant="transparent" square class="cell-ic-btn"
           data-discover="${esc(r.id)}" aria-label="Discover now"><obs-icon name="scan" size="14"></obs-icon></obs-button>Discover now</obs-tooltip>
@@ -18511,7 +18690,7 @@ function setRouters() {
             id="rtExportCsv" aria-label="Export as CSV"><obs-icon name="export-csv" size="14"></obs-icon></obs-button>Export as CSV</obs-tooltip>
         <obs-button variant="primary" id="btnAddRouter">Add IP Address Discovery</obs-button>
       </obs-toolbar>
-      ${grid('tblRouters', ROUTER_COLS, rows, { empty: 'No seed router matches this filter', fixed: true })}
+      ${grid('tblRouters', visibleCols(ROUTER_COLS, 'routers'), rows, { empty: 'No seed router matches this filter', fixed: true })}
       ${pager('tblRouters', p, 'seed routers', { full: true })}
     </div>`}
   </div>`;
@@ -18527,6 +18706,8 @@ PAGERS.tblRouters = cmd => {
 function bindRouterRows(scope) {
   scope.querySelectorAll('[data-discover]').forEach(btn =>
     btn.addEventListener('click', () => settingsRowAction('tblRouters', 'discover', btn.getAttribute('data-discover'))));
+  scope.querySelectorAll('[data-schedule]').forEach(btn =>
+    btn.addEventListener('click', () => openSchedulerPanel(btn.getAttribute('data-schedule'))));
   scope.querySelectorAll('obs-menu[data-rowmenu]').forEach(m =>
     m.addEventListener('select', e => settingsRowAction('tblRouters', keyOf(detailOf(e)), m.getAttribute('data-rowmenu'))));
 }
@@ -19003,7 +19184,7 @@ function setDiscoveryProfiles() {
             id="dpExportCsv" aria-label="Export as CSV"><obs-icon name="export-csv" size="14"></obs-icon></obs-button>Export as CSV</obs-tooltip>
         <obs-button variant="primary" id="btnCreateDiscoveryProfile">Create Discovery Profile</obs-button>
       </obs-toolbar>
-      ${grid('tblRouters', DISCOVERY_PROFILE_COLS, rows, { empty: 'No discovery profile matches this filter', fixed: true })}
+      ${grid('tblRouters', visibleCols(DISCOVERY_PROFILE_COLS, 'discoveryProfile'), rows, { empty: 'No discovery profile matches this filter', fixed: true })}
       ${pager('tblRouters', p, 'discovery profiles', { full: true })}
     </div>
   </div>`;
@@ -19867,15 +20048,23 @@ function bindContent() {
     else if (currentSection === 'addomain') bindAdDomainRows(view);
     else if (currentSection === 'siterules') bindSiteRuleRows(view);
     else if (currentSection === 'vendorlist') bindVendorOuiRows(view);
-    else if (currentSection === 'discoveryProfile') bindRouterRows(view);
+    else if (currentSection === 'discoveryProfile') {
+      bindRouterRows(view);
+      const dpv = view.querySelector('#dpView');
+      if (dpv) dpv.addEventListener('click', e => openColMenu('discoveryProfile', DISCOVERY_PROFILE_COLS, e.currentTarget, repaintSettingsTable));
+    }
     else if (POLICY_AREAS.some(a => a.key === currentSection)) bindPolicyRows(view);
     else {
       if (routersTab === 'approval') bindSubnetApprovalRows(view); else bindRouterRows(view);
       const rt = view.querySelector('#routersTabs');
       if (rt) rt.addEventListener('change', e => { routersTab = keyOf(detailOf(e)) || 'discovery'; renderContent(); });
+      const rtv = view.querySelector('#rtView');
+      if (rtv) rtv.addEventListener('click', e => openColMenu('routers', ROUTER_COLS, e.currentTarget, repaintSettingsTable));
     }
     if (addRouter) bindAddRouterPage();
     if (integrationProfileForm) bindIntegrationProfilePanel();
+    if (schedulerPanel) bindSchedulerPanel();
+    if (editScheduler) bindEditSchedulerPage();
   }
 
   const on = (sel, ev, fn) => { const el = view.querySelector(sel); if (el) el.addEventListener(ev, fn); };
