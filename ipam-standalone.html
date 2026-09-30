@@ -18298,7 +18298,7 @@ function bindVendorOuiRows(scope) {
 /* ========================================================================== */
 /* SITE SEPARATION RULES                                                      */
 /* ========================================================================== */
-const SITE_MATCH_FIELDS = ['Hostname', 'SNMP Location'];
+const SITE_MATCH_FIELDS = ['Hostname', 'SNMP Location', 'IP/IP Range'];
 const SITE_CASE_TRANSFORMS = ['None', 'UPPER', 'lower'];
 let SITE_RULES = [
   { id: 'sr-1', matchField: 'Hostname', caseTransform: 'None', pattern: '^([A-Z][a-z]+)-', template: '${1}' },
@@ -18316,8 +18316,8 @@ const SITE_RULE_COLS = [
   { title: '#', width: 6, cls: 'num', cell: r => num(SITE_RULES.indexOf(r) + 1) },
   { title: 'Match Field', width: 14, cell: r => esc(r.matchField) },
   { title: 'Case Transform', width: 14, cell: r => r.matchField === 'Hostname' ? esc(r.caseTransform) : '<span class="ip-muted">—</span>' },
-  { title: 'Regex Pattern', width: 34, cls: 'mono wrap', cell: r => esc(r.pattern) },
-  { title: 'Site Name Template', width: 22, cls: 'mono', cell: r => esc(r.template) },
+  { title: 'Pattern / IP/IP Range', width: 34, cls: 'mono wrap', cell: r => esc(r.pattern) },
+  { title: 'Site Name / Template', width: 22, cls: 'mono', cell: r => esc(r.template) },
   { title: '', width: 10, cls: 'ip-row-actions', cell: r => `<obs-menu items='${j(SITE_ROW_MENU)}' data-rowmenu="${esc(r.id)}"></obs-menu>` }
 ];
 function setSiteRules() {
@@ -19175,6 +19175,14 @@ function formBody() {
   }
 
   if (fm.kind === 'siterule') {
+    if (d.matchField === 'IP/IP Range') {
+      return `
+      ${field('Match Field', `<obs-select id="fMatchField" block options='${j(SITE_MATCH_FIELDS.map(v => opt(v)))}' value="${esc(d.matchField)}"></obs-select>`, null, true)}
+      <div></div>
+      ${field('IP/IP Range', `<obs-input id="fPattern" block placeholder="10.1.1.1-10.1.1.50 or 10.1.1.0/24" value="${esc(d.pattern)}"></obs-input>`,
+        'Every device whose IP falls in this range is assigned the site below, ahead of the regex rules and Device Neighborship fallback.', true)}
+      ${field('Site Name', `<obs-input id="fTemplate" block placeholder="e.g. Mumbai HQ" value="${esc(d.template)}"></obs-input>`, null, true)}`;
+    }
     return `
     ${field('Match Field', `<obs-select id="fMatchField" block options='${j(SITE_MATCH_FIELDS.map(v => opt(v)))}' value="${esc(d.matchField)}"></obs-select>`, null, true)}
     ${d.matchField === 'Hostname'
