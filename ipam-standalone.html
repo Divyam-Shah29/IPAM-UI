@@ -16871,6 +16871,7 @@ const IP_PAGE = 50;
 const IP_COLS = [
   { title: 'IP address', width: 140, cls: 'mono', cell: r => `<b class="ip-strong">${esc(r.ip)}</b>` },
   { title: 'Status', width: 130, cell: r => statusPill(r.status) },
+  { title: 'Monitoring Status', width: 150, cell: r => `<obs-tag variant="${r.monitoring ? 'tag-green' : 'tag-red'}">${r.monitoring ? 'Monitored' : 'Not Monitored'}</obs-tag>` },
   { title: 'Hostname', width: 250, cell: r => r.host ? esc(r.host) : '<span class="ip-muted">—</span>' },
   { title: 'MAC', width: 160, cls: 'mono', cell: r => r.mac ? esc(r.mac) : '<span class="ip-muted">—</span>' },
   { title: 'Device type', width: 140, cell: r => r.devType
@@ -17183,7 +17184,7 @@ function subnetTabBody(s) {
       <obs-tooltip placement="bottom"><obs-button slot="trigger" variant="transparent" square
           id="sdIpsFilterToggle" aria-label="Filters"><obs-icon name="filter" size="14"></obs-icon></obs-button>Filters</obs-tooltip>
     </obs-toolbar>
-    ${grid('tblSdIps', visibleCols(IP_COLS.filter(c => !['Subnet', 'Last seen', 'Connected switch', 'Connected port'].includes(c.title)), 'sdIps'), p.rows,
+    ${grid('tblSdIps', visibleCols(IP_COLS.filter(c => !['Subnet', 'Last seen'].includes(c.title)), 'sdIps'), p.rows,
       { openId: ipd && ipd.id, empty: 'No address in this subnet matches the current filter' })}
       ${pager('tblSdIps', p, 'addresses')}`;
   }
@@ -17282,7 +17283,7 @@ function bindSubnetChrome() {
 function bindSubnetBody() {
   const sdIpsView = view.querySelector('#sdIpsView');
   if (sdIpsView) sdIpsView.addEventListener('click', e =>
-    openColMenu('sdIps', IP_COLS.filter(c => !['Subnet', 'Last seen', 'Connected switch', 'Connected port'].includes(c.title)), e.currentTarget, repaintSubnetBody));
+    openColMenu('sdIps', IP_COLS.filter(c => !['Subnet', 'Last seen'].includes(c.title)), e.currentTarget, repaintSubnetBody));
   const sdIpsFT = view.querySelector('#sdIpsFilterToggle');
   if (sdIpsFT) sdIpsFT.addEventListener('click', toggleFilterRail);
   const sdHistView = view.querySelector('#sdHistView');
