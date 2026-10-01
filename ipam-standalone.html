@@ -16868,6 +16868,15 @@ PAGERS.tblSubnets = d => { pageAt += d; renderContent(); };
 /* ========================================================================== */
 const IP_PAGE = 50;
 
+function discoverDeviceForIp(id) {
+  const rec = svc.ip(id);
+  go('settings', 'discoveryProfile/create');
+  if (dpForm) { dpForm.targetValue = rec ? rec.ip : ''; renderContent(); }
+}
+const SD_IPS_ROW_MENU = [{ key: 'discover', label: 'Discover Device', icon: 'scan' }];
+const sdIpsCols = () => IP_COLS.filter(c => !['Subnet', 'Last seen'].includes(c.title)).concat([
+  { title: '', width: 8, cls: 'ip-row-actions', cell: r => `<obs-menu items='${j(SD_IPS_ROW_MENU)}' data-rowmenu="${esc(r.id)}"></obs-menu>` }
+]);
 const IP_COLS = [
   { title: 'IP address', width: 140, cls: 'mono', cell: r => `<b class="ip-strong">${esc(r.ip)}</b>` },
   { title: 'Status', width: 130, cell: r => statusPill(r.status) },
@@ -17184,7 +17193,7 @@ function subnetTabBody(s) {
       <obs-tooltip placement="bottom"><obs-button slot="trigger" variant="transparent" square
           id="sdIpsFilterToggle" aria-label="Filters"><obs-icon name="filter" size="14"></obs-icon></obs-button>Filters</obs-tooltip>
     </obs-toolbar>
-    ${grid('tblSdIps', visibleCols(IP_COLS.filter(c => !['Subnet', 'Last seen'].includes(c.title)), 'sdIps'), p.rows,
+    ${grid('tblSdIps', visibleCols(sdIpsCols(), 'sdIps'), p.rows,
       { openId: ipd && ipd.id, empty: 'No address in this subnet matches the current filter' })}
       ${pager('tblSdIps', p, 'addresses')}`;
   }
@@ -17283,7 +17292,7 @@ function bindSubnetChrome() {
 function bindSubnetBody() {
   const sdIpsView = view.querySelector('#sdIpsView');
   if (sdIpsView) sdIpsView.addEventListener('click', e =>
-    openColMenu('sdIps', IP_COLS.filter(c => !['Subnet', 'Last seen'].includes(c.title)), e.currentTarget, repaintSubnetBody));
+    openColMenu('sdIps', sdIpsCols(), e.currentTarget, repaintSubnetBody));
   const sdIpsFT = view.querySelector('#sdIpsFilterToggle');
   if (sdIpsFT) sdIpsFT.addEventListener('click', toggleFilterRail);
   const sdHistView = view.querySelector('#sdHistView');
@@ -17299,7 +17308,15 @@ function bindSubnetBody() {
       openSubnet(sd.id, 'ips');
     }));
   view.querySelectorAll('#tblSdIps tbody tr[data-id]').forEach(tr =>
-    tr.addEventListener('click', () => openIp(tr.getAttribute('data-id'), { stacked: true })));
+    tr.addEventListener('click', e => {
+      if (e.target.closest('obs-menu')) return;
+      openIp(tr.getAttribute('data-id'), { stacked: true });
+    }));
+  view.querySelectorAll('#tblSdIps obs-menu[data-rowmenu]').forEach(m => m.addEventListener('select', e => {
+    const key = keyOf(detailOf(e));
+    const id = m.getAttribute('data-rowmenu');
+    if (key === 'discover') discoverDeviceForIp(id);
+  }));
   if (view.querySelector('#tblSdHist')) {
     const evs = svc.events(svc.EMPTY(), { page: 1, size: 100000 }).rows;
     view.querySelectorAll('#tblSdHist tbody tr[data-id]').forEach(tr => {
@@ -17476,12 +17493,7 @@ function bindIpChrome() {
   const sx = q('#ipStackX');
   if (sx) sx.addEventListener('click', closeIp);
   const dd = q('#ipDiscoverDevice');
-  if (dd) dd.addEventListener('click', ev => {
-    ev.preventDefault();
-    const rec = svc.ip(ipd.id);
-    go('settings', 'discoveryProfile/create');
-    if (dpForm) { dpForm.targetValue = rec ? rec.ip : ''; renderContent(); }
-  });
+  if (dd) dd.addEventListener('click', ev => { ev.preventDefault(); discoverDeviceForIp(ipd.id); });
 }
 function bindIpBody() {
   const host = ipHost();
